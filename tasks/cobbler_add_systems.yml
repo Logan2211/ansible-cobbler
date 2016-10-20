@@ -1,0 +1,54 @@
+---
+# Copyright 2016, Logan Vig <logan2211@gmail.com>
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+- name: Check system status in Cobbler
+  command: cobbler system report --name={{ name | quote }}
+  ignore_errors: yes
+  register: cobbler_system_exists
+  changed_when: false
+
+- name: Add system to Cobbler
+  command: >
+    cobbler system add
+    {{ '--clobber' if clobber | bool else '' }}
+    --name={{ name | quote }}
+    --hostname={{ hostname | quote }}
+    --profile={{ profile | quote }}
+    --mac={{ mac | quote }}
+    --interface={{ cobbler_management_interface }}
+    --netboot-enabled={{ netboot | bool }}
+  when:
+    - cobbler_system_exists | failed
+      or clobber | bool
+  notify:
+    - Restart Cobbler
+    - Wait for Cobbler API availability
+    - Sync Cobbler
+
+- name: Add extra interfaces to Cobbler system
+  command: >
+    cobbler system edit
+    --name={{ name | quote }}
+    --interface={{ inner_item.name | quote }}
+    {{ ('--interface-type=' ~ inner_item.type | quote) if inner_item.type is defined else '' }}
+    {{ ('--interface-master=' ~ inner_item.bond_master | quote) if inner_item.bond_master is defined else '' }}
+    {{ ('--bonding-opts=' ~ (inner_item.bonding_opts | dictsort | map('join', '=') | join(' ') | quote)) if inner_item.bonding_opts is mapping else '' }}
+    {{ '--static=1' if inner_item.static is defined and inner_item.static | bool else '' }}
+    {{ ('--static-routes=' ~ (inner_item.static_routes | dictsort | map('join', ':') | join(' ') | quote)) if inner_item.static_routes is mapping else '' }}
+    {{ ('--ip-address=' ~ inner_item.ip | quote) if inner_item.ip is defined else '' }}
+    {{ ('--netmask=' ~ inner_item.netmask | quote) if inner_item.netmask is defined else '' }}
+  loop_control:
+    loop_var: inner_item
+  with_items: "{{ addl_interfaces }}"

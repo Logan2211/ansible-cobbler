@@ -1,0 +1,112 @@
+##all the keyboard/locale stuff is handled in kernel boot parameters
+##console-setup/ask_detect=false console-setup/layoutcode=us keyboard-configuration/xkb-keymap=us keyboard-configuration/layoutcode=us locale=en_US
+
+## Locale sets language and country.
+##d-i debian-installer/locale string en_US
+## Keyboard selection.
+## Disable automatic (interactive) keymap detection.
+##d-i console-setup/ask_detect boolean false
+##d-i console-setup/layoutcode string us
+
+## Network Configuration, Use auto to install
+## Set DHCP Timeout
+d-i netcfg/choose_interface select auto
+d-i netcfg/dhcp_timeout string 120
+
+## Any hostname and domain names assigned from dhcp take precedence over
+## values set here. However, setting the values still prevents the questions
+## from being shown, even if values come from dhcp.
+##d-i netcfg/get_hostname string unassigned-hostname
+d-i netcfg/get_domain string lstn.net
+##d-i netcfg/dhcp_hostname string unassigned-hostname
+
+## Partitioning START
+d-i partman-lvm/device_remove_lvm boolean true
+d-i partman-md/device_remove_md boolean true
+d-i partman-auto/purge_lvm_from_device  boolean true
+d-i partman-auto/disk string /dev/sda
+d-i partman-auto/method string lvm
+d-i partman-auto-lvm/new_vg_name string SYSVG
+d-i partman-auto-lvm/guided_size string max
+d-i partman-partitioning/confirm_write_new_label boolean true
+d-i partman/choose_partition select finish
+d-i partman/confirm boolean true
+d-i partman/confirm_nooverwrite boolean true
+d-i partman-lvm/confirm_nooverwrite boolean true
+d-i partman-md/confirm_nooverwrite boolean true
+d-i partman-lvm/confirm boolean true
+d-i partman/mount_style select label
+
+## Partitioning END
+
+## Install Source
+d-i mirror/country string manual
+d-i mirror/http/hostname string {{ cobbler_mirror_url }}
+d-i mirror/http/directory string /ubuntu
+d-i mirror/http/proxy string
+
+##set up /etc/apt/sources.list with local mirror
+d-i apt-setup/security_host string {{ cobbler_mirror_url }}
+d-i apt-setup/security_path string /ubuntu
+
+## Clock and Time Zone Setup
+d-i time/zone string US/Central
+d-i clock-setup/utc boolean true
+d-i clock-setup/ntp boolean true
+d-i clock-setup/ntp-server string ntp.lstn.net
+
+## Set Root Password
+##d-i passwd/root-login boolean true
+##d-i passwd/make-user boolean false
+##d-i passwd/root-password password <password>
+##d-i passwd/root-password-again password <password>
+##d-i user-setup/allow-password-weak boolean true
+
+## Set up non-root user
+## uncomment to disable root login (ie require sudo from the user defined below)
+d-i passwd/root-login boolean true
+d-i passwd/make-user boolean true
+d-i passwd/root-password-crypted password $default_password_crypted
+
+d-i passwd/user-fullname string LSN Administrator
+d-i passwd/username string lsnadmin
+d-i passwd/user-password-crypted password $default_password_crypted
+d-i user-setup/allow-password-weak boolean true
+d-i user-setup/encrypt-home boolean false
+
+## install the base and ssh
+tasksel tasksel/first multiselect none
+{% if kickstart_packages | length > 0 %}
+d-i pkgsel/include string {{ kickstart_packages | join(' ') }}
+{% endif %}
+
+## dont run updatedb after install
+d-i pkgsel/updatedb boolean false
+d-i pkgsel/update-policy select none
+## install grub for linux only
+d-i grub-installer/only_debian boolean true
+
+## Figure out if we're kickstarting a system or a profile
+#if $getVar('system_name','') != ''
+#set $what = "system"
+#else
+#set $what = "profile"
+#end if
+
+## This first command is run as early as possible, just after preseeding is read.
+## d-i preseed/early_command string [command]
+d-i preseed/early_command string wget -O- \
+   http://$http_server/cblr/svc/op/script/$what/$name/?script=preseed_early_default | \
+   /bin/sh -s
+
+# This command is run just before the install finishes, but when there is
+# still a usable /target directory. You can chroot to /target and use it
+# directly, or use the apt-install and in-target commands to easily install
+# packages and run commands in the target system.
+# d-i preseed/late_command string [command]
+d-i preseed/late_command string wget -O- \
+  http://$http_server/cblr/svc/op/script/$what/$name/?script=preseed_late | \
+  chroot /target /bin/sh -s
+
+### skip message at the end
+d-i finish-install/reboot_in_progress note

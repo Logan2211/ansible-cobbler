@@ -1,0 +1,106 @@
+# {{ ansible_managed }}
+# ******************************************************************
+# Cobbler managed dhcpd.conf file
+#
+# generated from cobbler dhcp.conf template ($date)
+# Do NOT make changes to /etc/dhcpd.conf. Instead, make your changes
+# in /etc/cobbler/dhcp.template, as /etc/dhcpd.conf will be
+# overwritten.
+#
+# ******************************************************************
+
+ddns-update-style interim;
+
+allow booting;
+allow bootp;
+
+ignore client-updates;
+set vendorclass = option vendor-class-identifier;
+
+option pxe-system-type code 93 = unsigned integer 16;
+
+{% if ansible_default_ipv4['network'] not in cobbler_dhcp_networks | map(attribute='cidr') | map('ipaddr', 'network') | list %}
+#default subnet stub
+subnet {{ ansible_default_ipv4['network'] }} netmask {{ ansible_default_ipv4['netmask'] }} {
+}
+{% endif %}
+{% for dhcp_network in cobbler_dhcp_networks %}
+{% set network = dhcp_network.cidr | ipaddr('network') %}
+{% set netmask = dhcp_network.cidr | ipaddr('netmask') %}
+{% set gateway = dhcp_network.gateway | default(dhcp_network.cidr | ipaddr('net') | ipaddr('1') | ipaddr('address')) %}
+{% set dns_servers = dhcp_network.dns_servers | default(cobbler_dhcp_dns_servers) %}
+{% set default_lease_time = dhcp_network.default_lease_time | default(cobbler_dhcp_default_lease_time) %}
+{% set max_lease_time = dhcp_network.max_lease_time | default(cobbler_dhcp_max_lease_time) %}
+subnet {{ network }} netmask {{ netmask }} {
+  option subnet-mask {{ netmask }};
+  option routers {{ gateway }};
+  option domain-name-servers {{ dns_servers | join(',') }};
+  {% if dhcp_network.range is defined %}
+  range {{ dhcp_network.range.start }} {{ dhcp_network.range.end }};
+  {% endif %}
+  {% if dhcp_network.options is defined %}
+  {% for option in dhcp_network.options | dictsort %}
+      option {{ option.0 }} {{ option.1 }};
+  {% endfor %}
+  {% endif %}
+  default-lease-time {{ default_lease_time }};
+  max-lease-time {{ max_lease_time }};
+  next-server $next_server;
+  deny unknown-clients;
+  class "pxeclients" {
+    match if substring (option vendor-class-identifier, 0, 9) = "PXEClient";
+    if option pxe-system-type = 00:02 {
+      filename "ia64/elilo.efi";
+    } else if option pxe-system-type = 00:06 {
+      filename "grub/grub-x86.efi";
+    } else if option pxe-system-type = 00:07 {
+      filename "grub/grub-x86_64.efi";
+    } else {
+      filename "pxelinux.0";
+    }
+  }
+}
+{% endfor %}
+
+#for dhcp_tag in $dhcp_tags.keys():
+    ## group could be subnet if your dhcp tags line up with your subnets
+    ## or really any valid dhcpd.conf construct ... if you only use the
+    ## default dhcp tag in cobbler, the group block can be deleted for a
+    ## flat configuration
+# group for Cobbler DHCP tag: $dhcp_tag
+group {
+        #for mac in $dhcp_tags[$dhcp_tag].keys():
+            #set iface = $dhcp_tags[$dhcp_tag][$mac]
+    host $iface.name {
+        hardware ethernet $mac;
+        #if $iface.ip_address:
+        fixed-address $iface.ip_address;
+        #end if
+        #if $iface.hostname:
+        option host-name "$iface.hostname";
+        #end if
+        #if $iface.netmask:
+        option subnet-mask $iface.netmask;
+        #end if
+        #if $iface.gateway:
+        option routers $iface.gateway;
+        #end if
+        #if $iface.enable_gpxe:
+        if exists user-class and option user-class = "gPXE" {
+            filename "http://$cobbler_server/cblr/svc/op/gpxe/system/$iface.owner";
+        } else if exists user-class and option user-class = "iPXE" {
+            filename "http://$cobbler_server/cblr/svc/op/gpxe/system/$iface.owner";
+        } else {
+            filename "undionly.kpxe";
+        }
+        #else
+        filename "$iface.filename";
+        #end if
+        ## Cobbler defaults to $next_server, but some users
+        ## may like to use $iface.system.server for proxied setups
+        next-server $next_server;
+        ## next-server $iface.next_server;
+    }
+        #end for
+}
+#end for

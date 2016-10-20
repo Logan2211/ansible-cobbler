@@ -1,0 +1,6 @@
+#set breed = $getVar('breed','')
+#set os_version = $getVar('os_version','')
+#if $breed == 'ubuntu' and $os_version == 'xenial'
+sed -ie 's/GRUB_CMDLINE_LINUX_DEFAULT="quiet splash"/GRUB_CMDLINE_LINUX_DEFAULT=""/g' /etc/default/grub
+update-grub
+#end if

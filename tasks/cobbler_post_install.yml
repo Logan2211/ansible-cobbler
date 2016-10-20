@@ -1,0 +1,187 @@
+---
+# Copyright 2016, Logan Vig <logan2211@gmail.com>
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+- name: Drop cobbler DHCP template
+  template:
+    src: dhcp.template.j2
+    dest: /etc/cobbler/dhcp.template
+    owner: root
+    group: root
+    mode: "0644"
+  notify:
+    - Restart Cobbler
+    - Wait for Cobbler API availability
+    - Sync Cobbler
+  tags:
+    - cobbler-config
+
+- name: Fail if Cobbler password is undefined
+  assert:
+    that: "cobbler_default_password is defined or cobbler_default_password_crypted is defined"
+    msg: "Please set cobbler_default_password or cobbler_default_password_crypted"
+  tags:
+    - cobbler-config
+
+- name: Set crypted password fact
+  set_fact:
+    cobbler_default_password_crypted: "{{ cobbler_default_password | password_hash('md5') }}"
+  when: "{{ cobbler_default_password_crypted is not defined }}"
+  tags:
+    - cobbler-config
+
+- name: Drop cobbler configurations
+  config_template:
+    src: settings.j2
+    dest: /etc/cobbler/settings
+    owner: root
+    group: root
+    mode: "0644"
+    config_overrides: "{{ cobbler_settings_overrides }}"
+    config_type: yaml
+  notify:
+    - Restart Cobbler
+    - Wait for Cobbler API availability
+    - Sync Cobbler
+  tags:
+    - cobbler-config
+
+- name: Start and enable Cobbler services
+  service:
+    name: "{{ item }}"
+    state: started
+    enabled: yes
+  with_items:
+    - "{{ cobbler_service_name }}"
+    - "{{ cobbler_tftp_service_name }}"
+    - "{{ cobbler_web_service_name }}"
+
+- name: Copy Cobbler distro signatures
+  copy:
+    src: distro_signatures.json
+    dest: "{{ cobbler_distro_signatures_dest }}"
+    mode: '0644'
+  register: copy_distro_signatures
+  when: "{{ cobbler_distro_signatures_copy | bool }}"
+
+- name: Restart Cobbler to update distro signatures
+  service:
+    name: "{{ cobbler_service_name }}"
+    state: restarted
+  when: "{{ copy_distro_signatures | changed }}"
+
+- name: Ensure Cobbler API availability
+  wait_for:
+    host: "{{ ansible_host }}"
+    port: "{{ cobbler_api_port }}"
+    timeout: 30
+
+- name: Download Cobbler bootloaders
+  command: cobbler get-loaders
+  args:
+    creates: /var/lib/cobbler/loaders/README
+  when: "{{ cobbler_get_loaders | bool }}"
+  notify:
+    - Restart Cobbler
+    - Wait for Cobbler API availability
+    - Sync Cobbler
+
+- name: Ensure Cobbler distro cache dir
+  file:
+    path: "{{ cobbler_distro_cache_dir }}"
+    state: directory
+
+- name: Check distro status in Cobbler
+  command: cobbler distro report --name={{ item.name | quote }}
+  ignore_errors: yes
+  register: cobbler_distro_exists
+  changed_when: false
+  with_items: cobbler_distros
+
+- name: Add distros to Cobbler
+  include: cobbler_add_distro.yml
+  with_items: "{{ cobbler_distro_exists.results }}"
+  when: "{{ item | failed
+            or item.item.clobber is defined and item.item.clobber | bool }}"
+  vars:
+    name: "{{ item.item.name }}"
+    arch: "{{ item.item.arch }}"
+    breed: "{{ item.item.breed }}"
+    os_version: "{{ item.item.os_version }}"
+    kopts: "{{ item.item.kopts | default(None) }}"
+    kernel_url: "{{ item.item.kernel_url }}"
+    kernel_checksum: "{{ item.item.kernel_checksum | default(false) }}"
+    initrd_url: "{{ item.item.initrd_url }}"
+    initrd_checksum: "{{ item.item.initrd_checksum | default(false) }}"
+    clobber: "{{ item.item.clobber | default(false) }}"
+
+- name: Ensure Cobbler snippets and scripts dirs
+  file:
+    path: "{{ item }}"
+    state: directory
+  with_items:
+    - "{{ cobbler_scripts_dir }}"
+    - "{{ cobbler_snippets_dir }}"
+
+- name: Drop Cobbler scripts
+  template:
+    src: "{{ item }}"
+    dest: "{{ cobbler_scripts_dir }}"
+    mode: '0644'
+  with_fileglob: "{{ cobbler_scripts_local }}"
+
+- name: Drop Cobbler snippets
+  template:
+    src: "{{ item }}"
+    dest: "{{ cobbler_snippets_dir }}"
+    mode: '0644'
+  with_fileglob: "{{ cobbler_snippets_local }}"
+
+- name: Create Cobbler kickstarts directory if it does not exist
+  file:
+    path: "{{ cobbler_kickstart_dir }}"
+    state: directory
+
+- name: Check profile status in Cobbler
+  command: cobbler profile report --name={{ item.name | quote }}
+  ignore_errors: yes
+  register: cobbler_profile_exists
+  changed_when: false
+  with_items: cobbler_profiles
+
+- name: Add profiles to Cobbler
+  include: cobbler_add_profile.yml
+  with_items: "{{ cobbler_profile_exists.results }}"
+  when: "{{ item | failed
+            or (item.item.clobber is defined and item.item.clobber | bool) }}"
+  vars:
+    name: "{{ item.item.name }}"
+    distro: "{{ item.item.distro }}"
+    kickstart: "{{ item.item.kickstart | default(omit) }}"
+    kickstart_packages: "{{ cobbler_default_packages
+                            + cobbler_user_packages | default([]) }}"
+    kopts: "{{ item.item.kopts | default(None) }}"
+    clobber: "{{ item.item.clobber | default(omit) }}"
+
+- name: Add systems to cobbler
+  include: cobbler_add_systems.yml
+  with_items: "{{ cobbler_systems }}"
+  vars:
+    name: "{{ item.name }}"
+    profile: "{{ item.profile }}"
+    hostname: "{{ item.hostname }}"
+    mac: "{{ item.mac }}"
+    addl_interfaces: "{{ item.addl_interfaces | default([]) }}"
+    netboot: "{{ item.netboot | default(omit) }}"
+    clobber: "{{ item.clobber | default(false) }}"

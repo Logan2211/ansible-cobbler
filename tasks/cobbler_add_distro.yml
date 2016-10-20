@@ -1,0 +1,49 @@
+---
+# Copyright 2016, Logan Vig <logan2211@gmail.com>
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+- name: Set distro path facts
+  set_fact:
+    distro_file: "{{ cobbler_distro_cache_dir }}/{{ name | quote }}"
+
+- name: Fetch distro kernel and initrd
+  get_url:
+    url: "{{ url_item.url }}"
+    dest: "{{ distro_file }}-{{ url_item.name }}"
+    checksum: "{{ url_item.checksum | default(omit) }}"
+  loop_control:
+    loop_var: url_item
+  with_items:
+    - name: kernel
+      url: "{{ kernel_url }}"
+      checksum: "{{ kernel_checksum }}"
+    - name: initrd
+      url: "{{ initrd_url }}"
+      checksum: "{{ initrd_checksum }}"
+
+- name: Add distro to Cobbler
+  command: >
+    cobbler distro add
+    --name={{ name | quote }}
+    --arch={{ arch | quote }}
+    --breed={{ breed | quote }}
+    --os-version={{ os_version | quote if os_version is defined else '' }}
+    --kernel={{ (distro_file ~ '-kernel') | quote }}
+    --initrd={{ (distro_file ~ '-initrd') | quote }}
+    {{ ('--kopts=' ~ (kopts | dictsort | map('join', '=') | join(' ') | quote)) if kopts is mapping else '' }}
+    {{ '--clobber' if clobber | bool else '' }}
+  notify:
+    - Restart Cobbler
+    - Wait for Cobbler API availability
+    - Sync Cobbler

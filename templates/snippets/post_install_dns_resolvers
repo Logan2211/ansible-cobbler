@@ -1,0 +1,36 @@
+#set breed = $getVar('breed','')
+#if $breed == 'debian' or $breed == 'ubuntu'
+#set resolvfile = '/etc/resolvconf/resolv.conf.d/base'
+#else
+#set resolvfile = '/etc/resolv.conf'
+#end if
+## Configure the system's primary hostname. This is also passed to anaconda, but
+## anaconda doesn't seem to honour it in DHCP-setups.
+#if $hostname != ""
+echo "$hostname" > /etc/hostname
+/bin/hostname $hostname
+#end if
+## =============================================================================
+## Configure name server search path in /etc/resolv.conf
+#set $num_ns = $len($name_servers)
+#set $num_ns_search = $len($name_servers_search)
+#if $num_ns_search > 0
+sed -i -e "/^search /d" $resolvfile
+echo -n "search " >>$resolvfile
+    #for $nameserversearch in $name_servers_search
+echo -n "$nameserversearch " >>$resolvfile
+    #end for
+echo "" >>$resolvfile
+#end if
+## =============================================================================
+## Configure name servers in /etc/resolv.conf
+#if $num_ns > 0
+sed -i -e "/^nameserver /d" $resolvfile
+    #for $nameserver in $name_servers
+      #if $breed == 'debian' or $breed == 'ubuntu'
+echo "nameserver $nameserver" >> $resolvfile
+      #else
+echo "nameserver $nameserver" >> $resolvfile
+      #end if
+    #end for
+#end if

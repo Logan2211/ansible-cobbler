@@ -1,0 +1,136 @@
+---
+# Copyright 2016, Logan Vig <logan2211@gmail.com>
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+cobbler_required_packages: []
+
+cobbler_api_port: 25151
+cobbler_get_loaders: true
+
+cobbler_dhcp_networks:
+  - cidr: 192.168.99.0/24
+    range:
+      start: 192.168.99.100
+      end: 192.168.99.200
+
+cobbler_dhcp_default_lease_time: 21600
+cobbler_dhcp_max_lease_time: 43200
+cobbler_dhcp_dns_servers:
+  - 64.31.5.1
+  - 64.31.5.2
+
+#the next-server address is sent as a DHCP attribute notifying the PXE
+#client which TFTP server to load the boot loader from. This should
+#typically be your cobbler server's IP address.
+cobbler_next_server_address: "{{ ansible_default_ipv4.address }}"
+
+cobbler_lib_dir: /var/lib/cobbler
+
+#cobbler does not support xenial as os-version yet
+cobbler_distro_signatures_copy: true
+cobbler_distro_signatures_dest: "{{ cobbler_lib_dir }}/distro_signatures.json"
+
+cobbler_scripts_local:
+  - ../templates/scripts/*
+cobbler_snippets_local:
+  - ../templates/snippets/*
+
+cobbler_distro_cache_dir: /opt/cobbler_import
+cobbler_kickstart_dir: "{{ cobbler_lib_dir }}/kickstarts/custom"
+cobbler_scripts_dir: "{{ cobbler_lib_dir }}/scripts"
+cobbler_snippets_dir: "{{ cobbler_lib_dir }}/snippets"
+
+cobbler_distros:
+  - name: Ubuntu-14.04-x86_64
+    arch: x86_64
+    breed: ubuntu
+    os_version: trusty
+    kernel_url: http://mirror.lstn.net/ubuntu/dists/trusty/main/installer-amd64/current/images/netboot/ubuntu-installer/amd64/linux
+    kernel_checksum: 'sha256:bdebc6c7bbd873bf5ad2480d90c2523da49cca8da5a0f4cb40adb7d1aeafb821'
+    initrd_url: http://mirror.lstn.net/ubuntu/dists/trusty/main/installer-amd64/current/images/netboot/ubuntu-installer/amd64/initrd.gz
+    initrd_checksum: 'sha256:49122585b52768e921ad6b100017210a37b1785cb10eccf50b57cd609a72e734'
+    checksum: 'sha256:bc09966b54f91f62c3c41fc14b76f2baa4cce48595ce22e8c9f24ab21ac8d965'
+  - name: Ubuntu-16.04-x86_64
+    arch: x86_64
+    breed: ubuntu
+    os_version: xenial
+    kernel_url: http://mirror.lstn.net/ubuntu/dists/xenial/main/installer-amd64/current/images/netboot/ubuntu-installer/amd64/linux
+    kernel_checksum: 'sha256:337c37d7ec00348414224baa6bdb2d43f2a34ef5676bafcdcad916f148b5b317'
+    initrd_url: http://mirror.lstn.net/ubuntu/dists/xenial/main/installer-amd64/current/images/netboot/ubuntu-installer/amd64/initrd.gz
+    initrd_checksum: 'sha256:bcc813210738ad53e2188763f5eebb6c33f6440ab5715fcda592f34817b7a453'
+
+cobbler_default_packages:
+  - openssh-server
+  - build-essential
+  - ifenslave
+  - nano
+  - ethtool
+
+cobbler_profiles:
+  - name: Ubuntu-14.04-x86_64
+    distro: Ubuntu-14.04-x86_64
+    kickstart: preseeds/base.preseed.j2
+    kopts:
+      'netcfg/choose_interface': auto
+  - name: Ubuntu-16.04-x86_64
+    distro: Ubuntu-16.04-x86_64
+    kickstart: preseeds/base.preseed.j2
+    kopts:
+      'netcfg/choose_interface': auto
+
+#this is a fake network interface for cobbler to use for installation purposes.
+#we will filter out interfaces like ^install.*$ in our network configuration
+#snippets
+cobbler_management_interface: install0
+
+cobbler_systems:
+  - name: testbox
+    profile: Ubuntu-14.04-x86_64
+    hostname: testbox.local
+    mac: '00:00:00:00:00:00'
+    netboot: true
+  - name: testbox2
+    profile: Ubuntu-16.04-x86_64
+    hostname: testbox2.local
+    mac: '11:11:11:11:11:11'
+    addl_interfaces:
+      - name: bond0
+        type: bond
+        bonding_opts:
+          mode: 802.3ad
+          miimon: 100
+          lacp-rate: fast
+          xmit-hash-policy: 'layer3+4'
+        static: yes
+        static_routes:
+          '0.0.0.0/0': 192.168.0.1
+        ip: 192.168.0.150
+        netmask: 255.255.255.0
+      - name: eth0
+        type: bond_slave
+        bond_master: bond0
+      - name: eth1
+        type: bond_slave
+        bond_master: bond0
+    netboot: true
+    clobber: true
+
+
+#define one of the following:
+#cobbler_default_password: #plaintext variable, will be crypted in cobbler config
+#cobbler_default_password_crypted: #use openssl passwd -1 to generate this
+
+cobbler_mirror_url: mirror.lstn.net
+
+cobbler_settings_overrides: {}
