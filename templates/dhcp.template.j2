@@ -14,6 +14,8 @@ ddns-update-style interim;
 allow booting;
 allow bootp;
 
+next-server $next_server;
+
 ignore client-updates;
 set vendorclass = option vendor-class-identifier;
 
@@ -32,12 +34,14 @@ subnet {{ ansible_default_ipv4['network'] }} netmask {{ ansible_default_ipv4['ne
 {% set default_lease_time = dhcp_network.default_lease_time | default(cobbler_dhcp_default_lease_time) %}
 {% set max_lease_time = dhcp_network.max_lease_time | default(cobbler_dhcp_max_lease_time) %}
 subnet {{ network }} netmask {{ netmask }} {
-  option subnet-mask {{ netmask }};
-  option routers {{ gateway }};
   option domain-name-servers {{ dns_servers | join(',') }};
+  pool {
   {% if dhcp_network.range is defined %}
-  range {{ dhcp_network.range.start }} {{ dhcp_network.range.end }};
+    option subnet-mask {{ netmask }};
+    option routers {{ gateway }};
+    range {{ dhcp_network.range.start }} {{ dhcp_network.range.end }};
   {% endif %}
+  }
   {% if dhcp_network.options is defined %}
   {% for option in dhcp_network.options | dictsort %}
       option {{ option.0 }} {{ option.1 }};
@@ -45,7 +49,6 @@ subnet {{ network }} netmask {{ netmask }} {
   {% endif %}
   default-lease-time {{ default_lease_time }};
   max-lease-time {{ max_lease_time }};
-  next-server $next_server;
   deny unknown-clients;
   class "pxeclients" {
     match if substring (option vendor-class-identifier, 0, 9) = "PXEClient";
