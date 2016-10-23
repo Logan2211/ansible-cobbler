@@ -19,7 +19,7 @@
   roles:
     - role: "{{ rolename | basename }}"
   vars:
-    etcd_cluster_group: all
+    cobbler_default_password: secrete
   post_tasks:
     - name: Check cobblerd is running
       command: pgrep -a cobblerd
