@@ -1,15 +1,28 @@
 language: python
 sudo: required
 dist: trusty
-install:
-  - pip install tox
-script:
-  - tox
+services:
+  - docker
 env:
-  - TOXENV=linters
-  - TOXENV=functional_1.9.4
-  - TOXENV=functional_2.1.0
-  - TOXENV=functional_stable
+  - OS_DISTRO=centos OS_VERSION=7 TOXENV=linters
+  - OS_DISTRO=centos OS_VERSION=7 TOXENV=functional_1.9.4
+  - OS_DISTRO=centos OS_VERSION=7 TOXENV=functional_2.1.0
+  - OS_DISTRO=centos OS_VERSION=7 TOXENV=functional_stable
+  - OS_DISTRO=ubuntu OS_VERSION=16.04 TOXENV=linters
+  - OS_DISTRO=ubuntu OS_VERSION=16.04 TOXENV=functional_1.9.4
+  - OS_DISTRO=ubuntu OS_VERSION=16.04 TOXENV=functional_2.1.0
+  - OS_DISTRO=ubuntu OS_VERSION=16.04 TOXENV=functional_stable
+before_install:
+  - sudo docker pull ${OS_DISTRO}:${OS_VERSION}
+install:
+  - sudo docker run --detach --volume="${PWD}":/opt/test:rw --name ${OS_DISTRO}-${OS_VERSION} ${OS_DISTRO}:${OS_VERSION} sleep 300
+  - sudo docker exec ${OS_DISTRO}-${OS_VERSION} yum -y install epel-release '@Development Tools' python-devel git libffi-devel openssl-devel libselinux-python
+  - sudo docker exec ${OS_DISTRO}-${OS_VERSION} /bin/bash -c 'curl https://bootstrap.pypa.io/get-pip.py | python'
+  - sudo docker exec ${OS_DISTRO}-${OS_VERSION} pip install tox
+script:
+  - sudo docker exec ${OS_DISTRO}-${OS_VERSION} /bin/bash -c "cd /opt/test; tox -e ${TOXENV}"
+after_script:
+  - sudo docker stop ${OS_DISTRO}-${OS_VERSION}
 notifications:
   slack:
     rooms:
