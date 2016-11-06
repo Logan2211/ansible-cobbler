@@ -107,7 +107,7 @@
   ignore_errors: yes
   register: cobbler_distro_exists
   changed_when: false
-  with_items: cobbler_distros
+  with_items: "{{ cobbler_distros }}"
 
 - name: Add distros to Cobbler
   include: cobbler_add_distro.yml
@@ -158,7 +158,7 @@
   ignore_errors: yes
   register: cobbler_profile_exists
   changed_when: false
-  with_items: cobbler_profiles
+  with_items: "{{ cobbler_profiles }}"
 
 - name: Add profiles to Cobbler
   include: cobbler_add_profile.yml
